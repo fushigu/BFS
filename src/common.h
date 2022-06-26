@@ -39,8 +39,11 @@ static const int ulong_bits = sizeof(unsigned long) * CHAR_BIT;
 #define MUL_SIZE(x) ((x) * size)
 #endif
 
+/** input vertex num, output owner of vertex */
 #define VERTEX_OWNER(v) ((int)(MOD_SIZE(v)))
+// input vertex num, output local vertex num
 #define VERTEX_LOCAL(v) ((size_t)(DIV_SIZE(v)))
+// input r: rank, i: local vertex num, output global vertex num
 #define VERTEX_TO_GLOBAL(r, i) ((int64_t)(MUL_SIZE((uint64_t)((i))) + (int)((r))))
 
 typedef struct tuple_graph {
