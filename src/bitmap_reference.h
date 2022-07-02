@@ -13,6 +13,9 @@
 #define ulong_shift >>6
 #define SET_VISITED(v) do {visited[VERTEX_LOCAL((v)) ulong_shift] |= (1UL << (VERTEX_LOCAL((v)) ulong_mask));} while (0)
 #define SET_VISITEDLOC(v) do {visited[(v) ulong_shift] |= (1ULL << ((v) ulong_mask));} while (0)
+#define SET_VISITED2(v) do {visited2[VERTEX_LOCAL((v)) ulong_shift] |= (1UL << (VERTEX_LOCAL((v)) ulong_mask));} while (0)
+#define SET_VISITED2LOC(v) do {visited2[(v) ulong_shift] |= (1ULL << ((v) ulong_mask));} while (0)
 #define TEST_VISITED(v) ((visited[VERTEX_LOCAL((v)) ulong_shift] & (1UL << (VERTEX_LOCAL((v)) ulong_mask))) != 0)
 #define TEST_VISITEDLOC(v) ((visited[(v) ulong_shift] & (1ULL << ((v) ulong_mask))) != 0)
-#define CLEAN_VISITED()  memset(visited,0,visited_size*sizeof(unsigned long));
+#define CLEAN_VISITED()  {memset(visited,0,visited_size*sizeof(unsigned long));}
+#define CLEAN_VISITED2() {memset(visited2,0,visited_size*sizeof(unsigned long));}

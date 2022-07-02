@@ -15,37 +15,76 @@
 
 // two arrays holding visited VERTEX_LOCALs for current and next level
 // we swap pointers each time
-int *q1, *q2;
-int qc, q2c;
+// int *q1, *q2;
+int q_cnt, q2_cnt;
 
 //VISITED bitmap parameters
 unsigned long *visited;
 int64_t visited_size;
 
-// globa variables of CSR graph to be used inside of AM-handlers
+unsigned long *visited1, *visited2;
+
+// global variables of CSR graph to be used inside of AM-handlers
 int64_t *pred_glob,*column;
+// global variables of CSR graph to be used inside of AM-handlers
 int *rowstarts;
+// global variables of CSR graph to be used inside of AM-handlers
 oned_csr_graph g;
 
+// typedef struct visitmsg {
+// 	int vloc;
+// 	int vfrom;
+// } visitmsg;
+
+// AM-handler for check&visit
+// void visithndl(int from, void* data, int sz) {
+// 	visitmsg *m = data;
+// 	if (!TEST_VISITEDLOC(m->vloc)) {
+// 		SET_VISITEDLOC(m->vloc);
+// 		q2[q2c++] = m->vloc;
+// 		pred_glob[m->vloc] = VERTEX_TO_GLOBAL(from, m->vfrom);
+	
+// 	}
+// }
+
+// inline void send_visit(int64_t glob, int from) {
+// 	visitmsg m = {VERTEX_LOCAL(glob), from};
+// 	aml_send(&m, 1, sizeof(visitmsg), VERTEX_OWNER(glob));
+// }
+
+// localのvertex 番号を格納
 typedef struct visitmsg {
 	int vloc;
 	int vfrom;
 } visitmsg;
 
-// AM-handler for check&visit
-void visithndl(int from, void* data, int sz) {
+void send_visit(visitmsg *m, int send_id) {
+	visitmsg n = {m->vfrom, m->vloc};
+	aml_send(&n, 2, sizeof(visitmsg), send_id);
+}
+
+void check_visit_hndl(int from, void* data, int sz) {
 	visitmsg *m = data;
-	if (!TEST_VISITEDLOC(m->vloc)) {
-		SET_VISITEDLOC(m->vloc) {
-			q2[q2c++] = m->vloc;
-			pred_glob[m->vloc] = VERTEX_TO_GLOBAL(from, m->vfrom);
-		}
+	if (TEST_VISITEDLOC(m->vloc)) {
+		// printf("%ld is visited, checked from %ld\n", VERTEX_TO_GLOBAL(my_pe(), m->vloc), VERTEX_TO_GLOBAL(from, m->vfrom));
+		send_visit(m, from);
 	}
 }
 
-inline void send_visit(int64_t glob, int from) {
+void send_check_visit(int64_t glob, int from) {
 	visitmsg m = {VERTEX_LOCAL(glob), from};
+	// printf("check %ld is visited, from %ld\n", glob, VERTEX_TO_GLOBAL(my_pe(), from));
 	aml_send(&m, 1, sizeof(visitmsg), VERTEX_OWNER(glob));
+}
+
+
+
+void in_queue_hndl(int from, void* data, int sz) {
+	visitmsg *m = data;
+	SET_VISITED2LOC(m->vloc);
+	pred_glob[m->vloc] = VERTEX_TO_GLOBAL(from, m->vfrom);
+	q2_cnt++;
+	// printf("node %d has recieved from %d that %ld visited already and set visit %ld\n", rank, from, VERTEX_TO_GLOBAL(from, m->vfrom), VERTEX_TO_GLOBAL(my_pe(), m->vloc));
 }
 
 //user should provide this function which would be called once to do kernel 1: graph convert
@@ -62,11 +101,10 @@ void make_graph_data_structure(const tuple_graph* const tg) {
 	rowstarts = g.rowstarts;
 
 	visited_size = (g.nlocalverts + ulong_bits - 1) / ulong_bits;
-	aml_register_handler(visithndl, 1);
+	// aml_register_handler(visithndl, 1);
 	visited = xmalloc(visited_size*sizeof(unsigned long));
-	q1 = xmalloc(g.nlocalverts*sizeof(int));
-	q2 = xmalloc(g.nlocalverts*sizeof(int));
-	for(int i = 0; i < g.nlocalverts;i++) q1[i]=0,q2[i]=0;
+	visited2 = xmalloc(visited_size*sizeof(unsigned long));
+	// for(int i = 0; i < g.nlocalverts;i++) q1[i]=0,q2[i]=0;
 }
 
 //user should provide this function which would be called several times to do kernel 2: breadth first search
@@ -77,32 +115,49 @@ void make_graph_data_structure(const tuple_graph* const tg) {
 // 	//user code to do bfs
 // }
 void run_bfs(int64_t root, int64_t* pred) {
-	int64_t nvisited;
 	long sum;
-	unsigned int lvl = 1;
 	pred_glob=pred;
-	aml_register_handler(visithndl,1);
+	aml_register_handler(check_visit_hndl, 1);
+	aml_register_handler(in_queue_hndl, 2);
 
 	CLEAN_VISITED();
+	CLEAN_VISITED2();
 
-	qc = 0; sum=1; q2c = 0;
+	q_cnt = 0; sum=1; q2_cnt = 0;
 
-	nvisited = 1;
-	// if owned root vertex
-	if(VERTEX_OWNER(root) == rank) {
+
+	if (VERTEX_OWNER(root) == rank) {
 		pred[VERTEX_LOCAL(root)]=root;
 		SET_VISITED(root);
-		q1[0] = VERTEX_LOCAL(root);
-		qc = 1;
+		SET_VISITED2(root);
+		// q_cnt = 1;
 	}
 
 	while(sum) {
-		// for all vertices in current level send visit AMs to all neighbours;
-		for(int i = 0; i < qc; i++) {
-			for (int j = rowstarts[q1[i]];j<rowstarts[q1[i]+1];j++) send_visit(COLUMN(j),q1[i]);
-			aml_barrier();
+		aml_barrier();
+		// forall vertex in this process
+		for (size_t i = 0; i < g.nlocalverts; i++) {
+			if(!TEST_VISITEDLOC(i)) {
+				for (int j = rowstarts[i];j<rowstarts[i+1];j++) {
+					send_check_visit(COLUMN(j), i);
+				}
+			} 
+			// else {
+			// 	printf("%ld has already visited\n", VERTEX_TO_GLOBAL(my_pe(), i));
+			// }
 		}
+		aml_barrier();
+		aml_barrier();
+		// printf("%d rank, q2_cnt: %d\n", rank, q2_cnt);
+
+		// gather to q1
+		sum = q2_cnt; q2_cnt = 0;
+		aml_long_allsum(&sum);
+
+		// copy visited1, 2
+		memcpy(visited, visited2, visited_size*sizeof(unsigned long));
 	}
+	aml_barrier();
 }
 
 //we need edge count to calculate teps. Validation will check if this count is correct
@@ -129,7 +184,8 @@ void clean_pred(int64_t* pred) {
 //user provided function to be called once graph is no longer needed
 void free_graph_data_structure(void) {
 	free_oned_csr_graph(&g);
-	free(visited);
+	// free(q1); free(q2);
+	free(visited);free(visited2);
 }
 
 //user should change is function if distribution(and counts) of vertices is changed
