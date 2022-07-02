@@ -21,6 +21,7 @@
 #include "../generator/utils.h"
 #include "aml.h"
 #include "common.h"
+#include "csr_reference.h"
 #include <math.h>
 #include <assert.h>
 #include <string.h>

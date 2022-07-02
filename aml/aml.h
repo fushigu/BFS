@@ -36,3 +36,4 @@ extern "C" {
 #define aml_long_allsum(p) MPI_Allreduce(MPI_IN_PLACE,p,1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD)
 #define aml_long_allmin(p) MPI_Allreduce(MPI_IN_PLACE,p,1,MPI_LONG_LONG,MPI_MIN,MPI_COMM_WORLD)
 #define aml_long_allmax(p) MPI_Allreduce(MPI_IN_PLACE,p,1,MPI_LONG_LONG,MPI_MAX,MPI_COMM_WORLD)
+// #define aml_long_gather(send_buf, send_cnt, recv_buf, recv_cnt) MPI_Allgather((send_buf),(send_cnt),MPI_INT,(recv_buf),(recv_cnt),MPI_INT,MPI_COMM_WORLD);
