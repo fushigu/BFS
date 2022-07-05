@@ -31,26 +31,6 @@ int *rowstarts;
 // global variables of CSR graph to be used inside of AM-handlers
 oned_csr_graph g;
 
-// typedef struct visitmsg {
-// 	int vloc;
-// 	int vfrom;
-// } visitmsg;
-
-// AM-handler for check&visit
-// void visithndl(int from, void* data, int sz) {
-// 	visitmsg *m = data;
-// 	if (!TEST_VISITEDLOC(m->vloc)) {
-// 		SET_VISITEDLOC(m->vloc);
-// 		q2[q2c++] = m->vloc;
-// 		pred_glob[m->vloc] = VERTEX_TO_GLOBAL(from, m->vfrom);
-	
-// 	}
-// }
-
-// inline void send_visit(int64_t glob, int from) {
-// 	visitmsg m = {VERTEX_LOCAL(glob), from};
-// 	aml_send(&m, 1, sizeof(visitmsg), VERTEX_OWNER(glob));
-// }
 
 // localのvertex 番号を格納
 typedef struct visitmsg {
@@ -58,22 +38,18 @@ typedef struct visitmsg {
 	int vfrom;
 } visitmsg;
 
-void send_visit(visitmsg *m, int send_id) {
-	visitmsg n = {m->vfrom, m->vloc};
-	aml_send(&n, 2, sizeof(visitmsg), send_id);
-}
 
 void check_visit_hndl(int from, void* data, int sz) {
 	visitmsg *m = data;
 	if (TEST_VISITEDLOC(m->vloc)) {
 		// printf("%ld is visited, checked from %ld\n", VERTEX_TO_GLOBAL(my_pe(), m->vloc), VERTEX_TO_GLOBAL(from, m->vfrom));
-		send_visit(m, from);
+		visitmsg n = {m->vfrom, m->vloc};
+		aml_send(&n, 2, sizeof(visitmsg), from);
 	}
 }
 
 void send_check_visit(int64_t glob, int from) {
 	visitmsg m = {VERTEX_LOCAL(glob), from};
-	// printf("check %ld is visited, from %ld\n", glob, VERTEX_TO_GLOBAL(my_pe(), from));
 	aml_send(&m, 1, sizeof(visitmsg), VERTEX_OWNER(glob));
 }
 
@@ -84,36 +60,24 @@ void in_queue_hndl(int from, void* data, int sz) {
 	SET_VISITED2LOC(m->vloc);
 	pred_glob[m->vloc] = VERTEX_TO_GLOBAL(from, m->vfrom);
 	q2_cnt++;
-	// printf("node %d has recieved from %d that %ld visited already and set visit %ld\n", rank, from, VERTEX_TO_GLOBAL(from, m->vfrom), VERTEX_TO_GLOBAL(my_pe(), m->vloc));
 }
 
 //user should provide this function which would be called once to do kernel 1: graph convert
 void make_graph_data_structure(const tuple_graph* const tg) {
-	// //graph conversion, can be changed by user by replacing oned_csr.{c,h} with new graph format 
-	// convert_graph_to_oned_csr(tg, &g);
-
-	// column=g.column;
-	// visited_size = (g.nlocalverts + ulong_bits - 1) / ulong_bits;
-	// visited = xmalloc(visited_size*sizeof(unsigned long));
-	// //user code to allocate other buffers for bfs
+	//graph conversion, can be changed by user by replacing oned_csr.{c,h} with new graph format 
+	//user code to allocate other buffers for bfs
 	convert_graph_to_oned_csr(tg, &g);
 	column = g.column;
 	rowstarts = g.rowstarts;
 
 	visited_size = (g.nlocalverts + ulong_bits - 1) / ulong_bits;
-	// aml_register_handler(visithndl, 1);
 	visited = xmalloc(visited_size*sizeof(unsigned long));
 	visited2 = xmalloc(visited_size*sizeof(unsigned long));
-	// for(int i = 0; i < g.nlocalverts;i++) q1[i]=0,q2[i]=0;
 }
 
 //user should provide this function which would be called several times to do kernel 2: breadth first search
 //pred[] should be root for root, -1 for unrechable vertices
 //prior to calling run_bfs pred is set to -1 by calling clean_pred
-// void run_bfs(int64_t root, int64_t* pred) {
-// 	pred_glob=pred;
-// 	//user code to do bfs
-// }
 void run_bfs(int64_t root, int64_t* pred) {
 	long sum;
 	pred_glob=pred;
@@ -123,14 +87,13 @@ void run_bfs(int64_t root, int64_t* pred) {
 	CLEAN_VISITED();
 	CLEAN_VISITED2();
 
-	q_cnt = 0; sum=1; q2_cnt = 0;
+	sum=1; q2_cnt = 0;
 
 
 	if (VERTEX_OWNER(root) == rank) {
 		pred[VERTEX_LOCAL(root)]=root;
 		SET_VISITED(root);
 		SET_VISITED2(root);
-		// q_cnt = 1;
 	}
 
 	while(sum) {
@@ -141,21 +104,18 @@ void run_bfs(int64_t root, int64_t* pred) {
 				for (int j = rowstarts[i];j<rowstarts[i+1];j++) {
 					send_check_visit(COLUMN(j), i);
 				}
-			} 
-			// else {
-			// 	printf("%ld has already visited\n", VERTEX_TO_GLOBAL(my_pe(), i));
-			// }
+			}
 		}
 		aml_barrier();
 		aml_barrier();
-		// printf("%d rank, q2_cnt: %d\n", rank, q2_cnt);
+
+		memcpy(visited, visited2, visited_size*sizeof(unsigned long));
 
 		// gather to q1
 		sum = q2_cnt; q2_cnt = 0;
 		aml_long_allsum(&sum);
 
 		// copy visited1, 2
-		memcpy(visited, visited2, visited_size*sizeof(unsigned long));
 	}
 	aml_barrier();
 }
