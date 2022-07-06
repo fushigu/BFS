@@ -16,16 +16,16 @@
 // two arrays holding visited VERTEX_LOCALs for current and next level
 // we swap pointers each time
 // int *q1, *q2;
-int q_cnt, q2_cnt;
+static int q_cnt, q2_cnt;
 
 //VISITED bitmap parameters
-unsigned long *visited;
-int64_t visited_size;
+static unsigned long *visited;
+static int64_t visited_size;
 
-unsigned long *visited1, *visited2;
+static unsigned long *visited2;
 
 // global variables of CSR graph to be used inside of AM-handlers
-int64_t *pred_glob,*column;
+static int64_t *pred_glob,*column;
 // global variables of CSR graph to be used inside of AM-handlers
 int *rowstarts;
 // global variables of CSR graph to be used inside of AM-handlers
@@ -101,7 +101,7 @@ void run_bfs(int64_t root, int64_t* pred) {
 		// forall vertex in this process
 		for (size_t i = 0; i < g.nlocalverts; i++) {
 			if(!TEST_VISITEDLOC(i)) {
-				for (int j = rowstarts[i];j<rowstarts[i+1];j++) {
+				for (long j = g.rowstarts[i];j<g.rowstarts[i+1];j++) {
 					send_check_visit(COLUMN(j), i);
 				}
 			}
