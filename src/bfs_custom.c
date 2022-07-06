@@ -15,8 +15,10 @@
 
 // two arrays holding visited VERTEX_LOCALs for current and next level
 // we swap pointers each time
-// int *q1, *q2;
-static int q_cnt, q2_cnt;
+// int *queue1;
+// static int q_cnt, q_limit;
+
+static int next_vert_cnt;
 
 //VISITED bitmap parameters
 static unsigned long *visited;
@@ -59,7 +61,7 @@ void in_queue_hndl(int from, void* data, int sz) {
 	visitmsg *m = data;
 	SET_VISITED2LOC(m->vloc);
 	pred_glob[m->vloc] = VERTEX_TO_GLOBAL(from, m->vfrom);
-	q2_cnt++;
+	next_vert_cnt++;
 }
 
 //user should provide this function which would be called once to do kernel 1: graph convert
@@ -79,15 +81,15 @@ void make_graph_data_structure(const tuple_graph* const tg) {
 //pred[] should be root for root, -1 for unrechable vertices
 //prior to calling run_bfs pred is set to -1 by calling clean_pred
 void run_bfs(int64_t root, int64_t* pred) {
-	long sum;
+	long sum, lvl = 0;
 	pred_glob=pred;
 	aml_register_handler(check_visit_hndl, 1);
 	aml_register_handler(in_queue_hndl, 2);
 
 	CLEAN_VISITED();
-	CLEAN_VISITED2();
+ 	do {memset(visited2,0,visited_size*sizeof(unsigned long));} while(0);
 
-	sum=1; q2_cnt = 0;
+	sum=1; next_vert_cnt = 0;
 
 
 	if (VERTEX_OWNER(root) == rank) {
@@ -97,7 +99,9 @@ void run_bfs(int64_t root, int64_t* pred) {
 	}
 
 	while(sum) {
+		lvl++;
 		aml_barrier();
+		printf("rank: %d, lvl: %ld\n", rank, lvl);
 		// forall vertex in this process
 		for (size_t i = 0; i < g.nlocalverts; i++) {
 			if(!TEST_VISITEDLOC(i)) {
@@ -106,14 +110,16 @@ void run_bfs(int64_t root, int64_t* pred) {
 				}
 			}
 		}
+		printf("rank: %d, lvl: %ld end\n", rank, lvl);
 		aml_barrier();
 		aml_barrier();
 
-		memcpy(visited, visited2, visited_size*sizeof(unsigned long));
 
 		// gather to q1
-		sum = q2_cnt; q2_cnt = 0;
+		sum = next_vert_cnt; next_vert_cnt = 0;
 		aml_long_allsum(&sum);
+	
+		memcpy(visited, visited2, visited_size*sizeof(unsigned long));
 
 		// copy visited1, 2
 	}
